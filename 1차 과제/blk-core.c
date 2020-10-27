@@ -40,8 +40,6 @@
 #include "blk.h"
 #include "blk-mq.h"
 
-#include <linux/time.h>
-
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
@@ -50,6 +48,9 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 
 DEFINE_IDA(blk_queue_ida);
 
+
+
+#include <linux/time.h>
 #define QSIZE 100
 /*struct info*/
 typedef struct {   // 구조체 정의
@@ -60,6 +61,7 @@ typedef struct {   // 구조체 정의
 
 int idx = 0;
 BlockQueue bqueue[QSIZE];
+
 
 
 /*
@@ -2131,7 +2133,7 @@ blk_qc_t submit_bio(int rw, struct bio *bio)
 				if (bio -> bi_bdev != NULL){
 					if (bio -> bi_bdev -> bd_super != NULL){
 						if (bio -> bi_bdev -> bd_super -> s_type != NULL){
-							if (bio -> bi_bdev -> bd_super -> s_type -> name != NULL)
+							if (bio -> bi_bdev -> bd_super -> s_type -> name != NULL){
 								do_gettimeofday(&my_time);
 								bqueue[(idx) % QSIZE].block_number = bio -> bi_iter.bi_sector;
 								bqueue[(idx) % QSIZE].fs_name = bio -> bi_bdev -> bd_super -> s_type -> name;
@@ -2143,9 +2145,10 @@ blk_qc_t submit_bio(int rw, struct bio *bio)
 									printk("bqueue[99].fs_name, block_number, time: %s %u %ld\n", bqueue[99].fs_name, bqueue[99].block_number, bqueue[99].time);
 									/* proc */
 																
-								}							
-							}
+								}	
+							}						
 						}
+					}
 				}
 			}
 
