@@ -17,21 +17,20 @@ int atsign_counting(const char * const buf, size_t len){
 		if(buf[i] == '@')
 			n++;	
 	}		
-	return 0;
+	return n;
 }
 
 int main(int argc, char *argv[]){
 	char buffer[BUF_LEN];
 	struct sockaddr_in server_addr, client_addr;
 	int server_fd, client_fd;
-	int len, msg_size;
+	int msg_size;
 	int atsign_count = 0;
 	struct tm* t;
 	struct timeb timebuffer;
 	int milisec;
 
 	int port_num = 1111;
-	memset(buffer, 0x00, sizeof(buffer));
 	
 	FILE *fp;
 	char fn[30];
@@ -56,7 +55,7 @@ int main(int argc, char *argv[]){
 			printf("%s\n", fn);
 			fp = fopen(fn, "a");
 			while( 0 < (msg_size = read(client_fd, buffer, BUF_LEN))){		
-				atsign_count += atsign_counting(buffer, len);
+				atsign_count += atsign_counting(buffer, msg_size);
 				if (atsign_count >= 5)
 					break;
 				if(fp != NULL){
@@ -67,10 +66,11 @@ int main(int argc, char *argv[]){
 					milisec = timebuffer.millitm;
 					fprintf(fp, "%02d:%02d:%02d.%03d|%d|%s\n", t->tm_hour, t->tm_min, t->tm_sec, milisec, msg_size, buffer); 			
 				}
-				
+				memset(buffer, 0x00, sizeof(buffer));
 			}
 			fclose(fp);
 			close(client_fd);
+			atsign_count = 0;
 
 		}
 		
