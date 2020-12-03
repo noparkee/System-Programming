@@ -62,13 +62,13 @@ static int add_open(struct inode *inode, struct file *file){
 
 static ssize_t add_write(struct file *file, const char __user *user_buffer,
 			size_t count, loff_t *ppos){
+	printk(KERN_INFO "add write\n");
+
 	int len = 0;
 	char buf[BUFSIZE];
 
 	Rule *rule = (Rule*)kmalloc(sizeof(Rule), GFP_KERNEL);
 	rule -> next = NULL;
-
-	printk(KERN_INFO "add write\n");
 
 	if (copy_from_user(buf, user_buffer, count)){
 		goto err;	
@@ -108,8 +108,50 @@ static int del_open(struct inode *inode, struct file *file){
 static ssize_t del_write(struct file *file, const char __user *user_buffer,
 			size_t count, loff_t *ppos){
 	printk(KERN_INFO "del write\n");
+
+	int len = 0;
+	int index, i;
+	char buf[BUFSIZE];
+
+	Rule *ptr = ruleList -> head;
+	Rule *pptr = ruleList -> head;
+
+	if (copy_from_user(buf, user_buffer, count)){
+		goto err;	
+	}
 	
-	return count;
+	sscanf(buf, "%d", &index);
+	len = strlen(buf);
+	
+	if (index != 0){
+		for (i=0; i<index; i++){
+			pptr = ptr;
+			ptr = ptr -> next;		
+		}	
+		if (ptr -> next != NULL){
+			pptr -> next = ptr -> next;
+			kfree(ptr);
+			ruleList -> size--;
+		}
+		else{
+			ruleList -> tail = pptr;
+			kfree(ptr);
+			ruleList -> size--;
+		}
+	}
+	else if (index == 0){
+		ruleList -> head = ptr -> next;
+		kfree(ptr);
+		ruleList -> size--;
+	}
+	
+	
+
+	return len;
+	
+	err:
+		printk("err!");
+		return len;	
 }
 
 static const struct file_operations del_fops = {
@@ -128,11 +170,16 @@ static int show_open(struct inode *inode, struct file *file){
 static ssize_t show_read(struct file *file, char __user *user_buffer,
 			size_t size, loff_t *ppos){
 	printk(KERN_INFO "read show\n");
+
 	Rule *rule = ruleList -> head;
+	int i = 0;
+
 	while (rule != NULL){
-		printk("%c %d\n", rule->type, rule->port);
+		printk("%d(%c) %d\n", i, rule->type, rule->port);
 		rule = rule -> next;
+		i++;
 	}
+
 	return 0;
 }
 
