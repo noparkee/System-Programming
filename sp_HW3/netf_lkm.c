@@ -64,9 +64,10 @@ static ssize_t add_write(struct file *file, const char __user *user_buffer,
 			size_t count, loff_t *ppos){
 	int len = 0;
 	char buf[BUFSIZE];
-	printk("0\n");
+
 	Rule *rule = (Rule*)kmalloc(sizeof(Rule), GFP_KERNEL);
-	printk("1\n");
+	rule -> next = NULL;
+
 	printk(KERN_INFO "add write\n");
 
 	if (copy_from_user(buf, user_buffer, count)){
@@ -75,7 +76,7 @@ static ssize_t add_write(struct file *file, const char __user *user_buffer,
 	
 	sscanf(buf, "%c %d", &(rule -> type), &(rule -> port));
 	len = strlen(buf);
-	printk("2\n");
+
 	if (ruleList -> size == 0)
 		ruleList -> head = rule;
 	else
@@ -83,7 +84,6 @@ static ssize_t add_write(struct file *file, const char __user *user_buffer,
 	
 	ruleList -> tail = rule;
 	ruleList -> size++;
-	printk("3\n");
 	
 	return len;
 	
@@ -128,9 +128,11 @@ static int show_open(struct inode *inode, struct file *file){
 static ssize_t show_read(struct file *file, char __user *user_buffer,
 			size_t size, loff_t *ppos){
 	printk(KERN_INFO "read show\n");
-	Rule *rule;	
-	for (rule = ruleList -> head; rule -> next != NULL ; rule = rule->next)	
+	Rule *rule = ruleList -> head;
+	while (rule != NULL){
 		printk("%c %d\n", rule->type, rule->port);
+		rule = rule -> next;
+	}
 	return 0;
 }
 
