@@ -3,6 +3,8 @@
 #include <linux/init.h>
 #include <linux/proc_fs.h>
 #include <linux/netfilter.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
 
 #define PROC_DIRNAME "customfilrewall"
 #define PROC_ADD "add"
@@ -31,25 +33,119 @@ typedef struct rule{
 
 static List *ruleList;
 
-
-static unsigned int netfilter_hook_fn(void *priv, struct sk_buff *skb,
-					const struct nf_hook_state * state){
-	
-	// return을 통해서 패킷 받을지 말지 결정
-	// inbound, outbound log 
-	// I - inbound packet drop (close되지 않아도 ㅇㅋ)
-	// O - outbound packet drop  
-	// P -
-	// F -
-
-	// ex) echo "I 1111" > add
-	// ex) echo 0 > del : 0 rule delete
+Rule *findRule(List *lst, unsigned short port, char type) {
+	Rule *rule;
+	for (rule = lst->head; rule != NULL && !(rule->port == port && rule->type == type); rule = rule->next);
+	return rule;
 }
 
-static struct nf_hook_ops netfilter_ops = {
-	.hook = netfilter_hook_fn,
+unsigned int as_addr_to_net(char *str){
+	unsigned char arr[4];
+	sscanf(str, "%d.%d.%d.%d", &arr[0], &arr[1], &arr[2], &arr[3]);
+
+	return *(unsigned int *)arr;
+}
+
+char *as_net_to_addr(unsigned int addr, char str[])
+{
+	char add[16];
+	unsigned char a = ((unsigned char *)&addr)[0];
+	unsigned char b = ((unsigned char *)&addr)[1];
+	unsigned char c = ((unsigned char *)&addr)[2];
+	unsigned char d = ((unsigned char *)&addr)[3];
+	sprintf(add, "%u.%u.%u.%u", a, b, c, d);
+	sprintf(str, "%s", add);
+	
+	return str;
+}
+
+// return을 통해서 패킷 받을지 말지 결정
+	// inbound, outbound log 
+	// I - inbound packet drop (close되지 않아도 ㅇㅋ) NF_INET_PRE_ROUTING / NF_INET_LOCAL_IN
+	// O - outbound packet drop NF_INET_POST_ROUTING / NF_INET_LOCAL_OUT
+	// P - inbound packet's destination -> 131.1.1.1 / port -> source port - NF_INET_PRE_ROUTING
+	// F - NF_INET_FORWARD
+	// NF_DROP
+	// ex) echo "I 1111" > add
+	// ex) echo 0 > del : 0 rule delete
+
+static unsigned int netfilter_inbound_hook(void *priv, struct sk_buff *skb,
+					const struct nf_hook_state * state){
+	// NF_INET_LOCAL_IN
+	
+	Rule *ptr;
+	struct iphdr *ih = ip_hdr(skb);
+	struct tcphdr *th = tcp_hdr(skb);
+
+	char saddr[128], daddr[128];
+	unsigned short sport, dport;
+	
+	as_net_to_addr((unsigned int)(ih->saddr), saddr);
+	as_net_to_addr((unsigned int)(ih->daddr), daddr);
+
+	sport = htons(th -> source);
+	dport = htons(th -> dest);
+	
+	ptr = findRule(ruleList, sport, 'I');
+	
+	if (ptr == NULL){
+		printk(KERN_ALERT "%-15s:%2u,%5d,%5d,%-15s,%-15s\n", "INBOUND", ih->protocol, sport, dport, saddr, daddr);
+		return NF_ACCEPT;
+
+	}
+	else{
+		printk(KERN_ALERT "%-15s:%2u,%5d,%5d,%-15s,%-15s\n", "DROP(INBOUND)", ih->protocol, sport, dport, saddr, daddr);
+		return NF_DROP;
+		
+	}
+
+}
+
+static struct nf_hook_ops netfilter_inbound_ops = {
+	.hook = netfilter_inbound_hook,
 	.pf = PF_INET,
-	.hooknum = NF_INET_PRE_ROUTING,
+	.hooknum = NF_INET_LOCAL_IN,	
+	.priority = 1,
+};
+
+/*---------------------------------------------*/
+
+static unsigned int netfilter_outbound_hook(void *priv, struct sk_buff *skb,
+					const struct nf_hook_state * state){
+	// NF_INET_LOCAL_OUT
+	
+	Rule *ptr;
+	struct iphdr *ih = ip_hdr(skb);
+	struct tcphdr *th = tcp_hdr(skb);
+
+	char saddr[128], daddr[128];
+	unsigned short sport, dport;
+	
+	as_net_to_addr((unsigned int)(ih->saddr), saddr);
+	as_net_to_addr((unsigned int)(ih->daddr), daddr);
+
+	sport = htons(th -> source);
+	dport = htons(th -> dest);
+	
+	ptr = findRule(ruleList, dport, 'O');
+	
+	if (ptr == NULL){
+		printk(KERN_ALERT "%-15s:%2u,%5d,%5d,%-15s,%-15s\n", "OUTBOUND", ih->protocol, sport, dport, saddr, daddr);
+		return NF_ACCEPT;
+
+	}
+	else{
+		printk(KERN_ALERT "%-15s:%2u,%5d,%5d,%-15s,%-15s\n", "DROP(OUTBOUND)", ih->protocol, sport, dport, saddr, daddr);
+		return NF_DROP;
+		
+	}
+
+}
+
+static struct nf_hook_ops netfilter_outbound_ops = {
+	.hook = netfilter_outbound_hook,
+	.pf = PF_INET,
+	.hooknum = NF_INET_LOCAL_OUT,	
 	.priority = 1,
 };
 
@@ -198,7 +294,8 @@ static int __init init(void){
 	proc_del = proc_create(PROC_DEL, 0777, proc_dir, &del_fops);		 	
 	proc_show = proc_create(PROC_SHOW, 0777, proc_dir, &show_fops);
 
-	nf_register_hook(&netfilter_ops);
+	nf_register_hook(&netfilter_inbound_ops);
+	nf_register_hook(&netfilter_outbound_ops);
 	
 	ruleList = (List*)kmalloc(sizeof(List), GFP_KERNEL);
 	ruleList -> head = NULL;
@@ -215,7 +312,12 @@ static void __exit exit(void){
 	remove_proc_entry(PROC_DEL, proc_dir);
 	remove_proc_entry(PROC_SHOW, proc_dir);
 	remove_proc_entry(PROC_DIRNAME, NULL);
-	nf_unregister_hook(&netfilter_ops);
+	nf_unregister_hook(&netfilter_inbound_ops);
+	nf_unregister_hook(&netfilter_outbound_ops);
+
+	// rule free
+	// ruleList free
+	kfree(ruleList);
 }
 
 module_init(init);
